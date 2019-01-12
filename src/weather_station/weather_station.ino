@@ -4,13 +4,24 @@
 #include <BME280I2C.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
+#include <ArduinoJson.h>
+
+#define STATION_ID 1
 
 // Wifi:
-#define STASSID "BELL457"
-#define STAPSK  "6DF2572754DF"
+#define STASSID "BELL457" // SSID
+#define STAPSK  "6DF2572754DF" // SSID PSK
 #define POST_URL "http://192.168.2.23:3000/update"
-#define MAX_WIFI_TRIES 10
+#define GOOD_HTTP_RESP_CODE HTTP_CODE_OK // Good HTTP response. Anything other than this number will result in an error being reported.
+#define MAX_WIFI_TRIES 10 // How many times to tr to connect to WIFI
+#define SERIAL_OUT_REQUEST_DETAILS false // Turn on/off transmission debugging. Errors will always serial out.
 
+// Default GPS
+#define GPS_LAT 43.6560079
+#define GPS_LNG -79.3813297
+#define GPS_ALT 0
+
+// Pins
 #define SW_ENABLE_SERIAL D5
 #define SW_ENABLE_OLED D6
 #define SW_I2C_SCAN D7
@@ -20,9 +31,9 @@
 #define DEEP_SLEEP_MODE deepSleep
 
 #define SERIAL_CON_SPD 19200
-#define SERIAL_DEBUG 0
+#define SERIAL_DEBUG 0 // have the ESP8266 debug serial outs
 
-#define SCROLL_ENABABLED true
+#define SCROLL_ENABABLED true // Have the attached screen automatically scroll
 
 #define OLED_RESET -1
 #define SCREEN_WIDTH 128
@@ -30,6 +41,7 @@
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 int scrollCounter = 0;
 int scrollFrame = 0;
+int lastTxResponse = 0;
 
 BME280I2C::Settings settings(
   BME280::OSR_X1,
@@ -60,6 +72,7 @@ struct SensorReading_s {
   int alt;
   int rssi;
   bool rxtxConn;
+  unsigned int stationId;
 } SensorReading_UnInit {
   0,
   NAN,
@@ -71,11 +84,12 @@ struct SensorReading_s {
   0,
   0,
   0,
+  GPS_LAT,
+  GPS_LNG,
+  GPS_ALT,
   0,
-  0,
-  0,
-  0,
-  false
+  false,
+  STATION_ID
 };
 
 typedef struct SensorReading_s SensorReading;
@@ -87,94 +101,103 @@ void ICACHE_FLASH_ATTR displaySensorOled(unsigned int dataToShow) {
   display.setCursor(0,0);
 
   if ((dataToShow & 1) == 1) {
-    display.print("Temp: ");
+    display.print(F("Temp: "));
     display.print(currentReading.temp);
     display.println("C");
   }
 
   if ((dataToShow & 2) == 2) {
-    display.print("Hum: ");
+    display.print(F("Hum: "));
     display.print(currentReading.hum);
-    display.println("% RH");
+    display.println(F("% RH"));
   }
 
   if ((dataToShow & 4) == 4) {
-    display.print("Pres: ");
+    display.print(F("Pres: "));
     display.print(currentReading.pres);
-    display.println("Pa");
+    display.println(F("Pa"));
   }
 
   if ((dataToShow & 8) == 8) {
-    display.print("Light: ");
+    display.print(F("Light: "));
     display.println(currentReading.lightLevel);
   }
 
   if ((dataToShow & 16) == 16) {
-    display.print("vIn: ");
+    display.print(F("vIn: "));
     display.print(currentReading.vIn);
-    display.println("v");
+    display.println(F("v"));
   }
 
   if ((dataToShow & 32) == 32) {
-    display.print("vBat: ");
+    display.print(F("vBat: "));
     display.print(currentReading.vIn);
-    display.println("v");
+    display.println(F("v"));
   }
   
   if ((dataToShow & 64) == 64) {
-    display.print("wDir: ");
+    display.print(F("wDir: "));
     display.println(currentReading.windDirection);
   }
 
   if ((dataToShow & 128) == 128) {
-    display.print("wSpd: ");
+    display.print(F("wSpd: "));
     display.print(currentReading.windSpeed);
-    display.println("km/h");
+    display.println(F("km/h"));
   }
   
   if ((dataToShow & 256) == 256) {
-    display.print("cps: ");
+    display.print(F("cps: "));
     display.print(currentReading.cps);
-    display.println("c/s");
+    display.println(F("c/s"));
   }
   
   if ((dataToShow & 512) == 512) {
-    display.print("Lat: ");
+    display.print(F("Lat: "));
     display.println(currentReading.lat);
   }
   
   if ((dataToShow & 1024) == 1024) {
-    display.print("Lng: ");
-    display.println(currentReading.lat);
+    display.print(F("Lng: "));
+    display.println(currentReading.lng);
   }
 
   if ((dataToShow & 2048) == 2048) {
-    display.print("Alt: ");
-    display.println(currentReading.lat);
+    display.print(F("Alt: "));
+    display.println(currentReading.alt);
   }
 
   if ((dataToShow & 4096) == 4096) {
-    display.print("RunM: ");
+    display.print(F("RunM: "));
     char hexOut[5];
     sprintf(hexOut, "%x", currentReading.runMode);
     display.println(hexOut);
   }
 
   if ((dataToShow & 8192) == 8192) {
-    display.print("RXTXConn: ");
-    display.println(currentReading.rxtxConn ? "true" : "false");
+    display.print(F("RXTXConn: "));
+    display.println(currentReading.rxtxConn ? F("true") : F("false"));
   }
 
   if ((dataToShow & 16384) == 16384) {
-    display.print("RSSI: ");
+    display.print(F("RSSI: "));
     display.println(currentReading.rssi);
   }
 
   if ((dataToShow & 32768) == 32768) {
-    display.print("\n");
-    display.print("Temp: ");
+    display.print(F("txCode: "));
+    display.println(lastTxResponse);
+  }
+
+  if ((dataToShow & 65536) == 65536) {
+    display.print(F("StnId: "));
+    display.println(currentReading.stationId);
+  }
+
+  if ((dataToShow & 131072) == 131072) {
+    display.print(F("\nTemp: "));
     display.print(currentReading.temp);
-    display.println("C");
+    display.println(F("C"));
   }
   
   display.display();
@@ -182,53 +205,57 @@ void ICACHE_FLASH_ATTR displaySensorOled(unsigned int dataToShow) {
 
 void ICACHE_FLASH_ATTR printSensorDataVerbose(Stream* client) {
 
-  client->print("\nTemp: ");
+  client->print(F("\nTemp: "));
   client->print(currentReading.temp);
-  client->print("°C");
-  client->print("\tHum: ");
+  client->print(F("°C"));
+  client->print(F("\tHum: "));
   client->print(currentReading.hum);
-  client->print("% RH");
-  client->print("\tPres: ");
+  client->print(F("% RH"));
+  client->print(F("\tPres: "));
   client->print(currentReading.pres);
-  client->print("Pa");
-  client->print("\tLum: ");
+  client->print(F("Pa"));
+  client->print(F("\tLum: "));
   client->print(currentReading.lightLevel);
-  client->print("Lux");
-  client->print("\tvIn: ");
+  client->print(F("Lux"));
+  client->print(F("\tvIn: "));
   client->print(currentReading.vIn);
-  client->print("v");
-  client->print("\tvBat: ");
+  client->print(F("v"));
+  client->print(F("\tvBat: "));
   client->print(currentReading.vBat);
-  client->print("v");
-  client->print("\twDir: ");
+  client->print(F("v"));
+  client->print(F("\twDir: "));
   client->print(currentReading.windDirection);
-  client->print("°");
-  client->print("\twSpd: ");
+  client->print(F("°"));
+  client->print(F("\twSpd: "));
   client->print(currentReading.windSpeed);
-  client->print("km/h");
-  client->print("\tcps: ");
+  client->print(F("km/h"));
+  client->print(F("\tcps: "));
   client->print(currentReading.cps);
-  client->print("c/s");
-  client->print("\tlat: ");
+  client->print(F("c/s"));
+  client->print(F("\tlat: "));
   client->print(currentReading.lat);
-  client->print("\tlng: ");
+  client->print(F("\tlng: "));
   client->print(currentReading.lng);
-  client->print("\talt: ");
+  client->print(F("\talt: "));
   client->print(currentReading.alt);
-  client->print("\tRunM: 0x");
+  client->print(F("\tRunM: 0x"));
   if (currentReading.runMode < 0x10) {
     client->print("0");
   }
   client->print(currentReading.runMode, HEX);
-  client->print("\tRXTX: ");
-  client->print(currentReading.rxtxConn) ? "true" : "false";
-  client->print("\tRSSI: ");
+  client->print(F("\tRXTX: "));
+  client->print(currentReading.rxtxConn) ? F("true") : F("false");
+  client->print(F("\tRSSI: "));
   client->print(currentReading.rssi);
-  client->print(".");
+  client->print(F("\ttxCode: "));
+  client->print(lastTxResponse);
+  client->print(F("\tStnId: "));
+  client->print(currentReading.stationId);
+  client->print(F("."));
 }
 
 void ICACHE_FLASH_ATTR printSensorData(Stream* client) {
-  client->print("\n");
+  client->print(F("\n"));
   client->print(currentReading.temp);
   client->print(",");
   client->print(currentReading.hum);
@@ -255,10 +282,13 @@ void ICACHE_FLASH_ATTR printSensorData(Stream* client) {
   client->print(",");
   client->print(currentReading.runMode, HEX);
   client->print(",");
-  client->print(currentReading.rxtxConn) ? "true" : "false";
+  client->print(currentReading.rxtxConn) ? F("true") : F("false");
   client->print(",");
   client->print(currentReading.rssi);
-  
+  client->print(",");
+  client->print(lastTxResponse);
+  client->print(",");
+  client->print(currentReading.stationId);
 }
 
 void ICACHE_FLASH_ATTR serialPrint(Stream* client, String dataToPrint) {
@@ -320,8 +350,8 @@ bool ICACHE_FLASH_ATTR connectToWifi() {
 
   int wifiTries = 0;
 
-  displayPrint("Connecting RX/TX...\n", true);
-  serialPrint(&Serial, "\nConnecting RX/TX...\n");
+  displayPrint(F("Connecting RX/TX...\n"), true);
+  serialPrint(&Serial, F("\nConnecting RX/TX...\n"));
 
   while (WiFi.status() != WL_CONNECTED && wifiTries < MAX_WIFI_TRIES) {
     wifiTries++;
@@ -331,22 +361,22 @@ bool ICACHE_FLASH_ATTR connectToWifi() {
   }
   
   if (wifiTries >= MAX_WIFI_TRIES) {
-    serialPrint(&Serial, "\nFailed to connect to wifi");
+    serialPrint(&Serial, F("\nFailed to connect to wifi"));
   
-    displayPrint("\nFailed to connect to wifi");
+    displayPrint(F("\nFailed to connect to wifi"));
     delay(2000);
     return false;
   } else {
-    serialPrint(&Serial, "\nWifi connected: ");
-    serialPrint(&Serial, (String)WiFi.localIP());
+    serialPrint(&Serial, F("\nWifi connected: "));
+    serialPrint(&Serial, (String)WiFi.localIP().toString());
+    serialPrint(&Serial, F("\tRSSI: "));
     serialPrint(&Serial, (long)WiFi.RSSI());
-    serialPrint(&Serial, "\tRSSI: ");
   
-    displayPrint("Wifi connected: ", true);
-    displayPrint((String)WiFi.localIP());
-    displayPrint("RSSI: ");
+    displayPrint(F("Wifi connected: "), true);
+    displayPrint((String)WiFi.localIP().toString());
+    displayPrint(F("   RSSI: "));
     displayPrint((long)WiFi.RSSI());
-    
+
     return true;
   }
 }
@@ -422,13 +452,13 @@ void ICACHE_FLASH_ATTR setRunMode() {
 void ICACHE_FLASH_ATTR scanI2CDevices() {
   byte error, address;
   int nDevices;
-  serialPrint(&Serial, "\nScanning...");
+  serialPrint(&Serial, F("\nScanning..."));
 
   if (currentReading.runMode & 16 == 16) {
     display.clearDisplay();
     display.setCursor(0,0);
   }
-  displayPrint("I2C Scan...\n");
+  displayPrint(F("I2C Scan...\n"));
   delay(500);
  
   nDevices = 0;
@@ -439,7 +469,7 @@ void ICACHE_FLASH_ATTR scanI2CDevices() {
 
     if (error == 0)
     {
-      serialPrint(&Serial, "\nI2C device found at address 0x");
+      serialPrint(&Serial, F("\nI2C device found at address 0x"));
       displayPrint("0x");
       if (address < 16) {
         serialPrint(&Serial, "0");
@@ -451,7 +481,7 @@ void ICACHE_FLASH_ATTR scanI2CDevices() {
       nDevices++;
     }
     else if (error == 4) {
-      serialPrint(&Serial, "\nUnknown error at address 0x");
+      serialPrint(&Serial, F("\nUnknown error at address 0x"));
       displayPrint("ERx");
       if (address < 16) {
         serialPrint(&Serial, "0");
@@ -463,11 +493,72 @@ void ICACHE_FLASH_ATTR scanI2CDevices() {
     }
   }
   if (nDevices == 0) {
-    serialPrint(&Serial, "\nNo I2C devices found");
-    displayPrint("No I2C devices found");
+    serialPrint(&Serial, F("\nNo I2C devices found"));
+    displayPrint(F("No I2C devices found"));
   } else {
-    serialPrint(&Serial, "\nDone\n");
-    displayPrint("Fin~");
+    serialPrint(&Serial, F("\nDone\n"));
+    displayPrint(F("Fin~"));
+  }
+}
+
+void ICACHE_FLASH_ATTR txSensorData() {
+  if ((currentReading.runMode & 8) == 0) {
+    if ((WiFi.status() == WL_CONNECTED)) {
+      WiFiClient client;
+      HTTPClient http;
+    
+      if (http.begin(client, POST_URL)) {
+        http.addHeader(F("Content-Type"), F("application/json"));
+        
+        StaticJsonBuffer<512> JSONbuffer;
+        char JSONmessageBuffer[512];
+        
+        JsonObject& JSONencoder = JSONbuffer.createObject();
+        JSONencoder["payload"] = JSONbuffer.createObject();
+        JSONencoder["payload"][F("temperature")] = currentReading.temp;
+        JSONencoder["payload"][F("humidity")] = currentReading.hum;
+        JSONencoder["payload"][F("pressure")] = currentReading.pres;
+        JSONencoder["payload"][F("light")] = currentReading.lightLevel;
+        JSONencoder["payload"][F("voltageIn")] = currentReading.vIn;
+        JSONencoder["payload"][F("voltageBattery")] = currentReading.vBat;
+        JSONencoder["payload"][F("windDirection")] = currentReading.windDirection;
+        JSONencoder["payload"][F("windSpeed")] = currentReading.windSpeed;
+        JSONencoder["payload"][F("countsPerSecond")] = currentReading.cps;
+        JSONencoder["payload"][F("latitude")] = currentReading.lat;
+        JSONencoder["payload"][F("longitude")] = currentReading.lng;
+        JSONencoder["payload"][F("altitude")] = currentReading.alt;
+        JSONencoder["payload"][F("rssi")] = currentReading.rssi;
+        JSONencoder["payload"][F("transmitCode")] = lastTxResponse;
+        JSONencoder["payload"][F("stationId")] = currentReading.stationId;
+        JSONencoder["payload"][F("runMode")] = currentReading.runMode;
+
+        JSONencoder.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+        
+        lastTxResponse = http.POST(JSONmessageBuffer);
+        if (SERIAL_OUT_REQUEST_DETAILS) {
+          serialPrint(&Serial, F("\nSending POST Request..."));
+        }
+        
+        if (lastTxResponse > 0) {
+          if (SERIAL_OUT_REQUEST_DETAILS) {
+            serialPrint(&Serial, F(" HTTP Response: "));
+            serialPrint(&Serial, (String)lastTxResponse);
+          }
+          
+          if (lastTxResponse == GOOD_HTTP_RESP_CODE) {
+            if (SERIAL_OUT_REQUEST_DETAILS) {
+              String payload = http.getString();
+              serialPrint(&Serial, F("\nResponse Body: \n"));
+              serialPrint(&Serial, payload);
+            }
+          }
+        } else {
+          serialPrint(&Serial, F("\nHTTP Error: "));
+          serialPrint(&Serial, http.errorToString(lastTxResponse).c_str());
+        }
+        http.end();
+      }
+    }
   }
 }
 
@@ -488,8 +579,8 @@ void ICACHE_FLASH_ATTR setup() {
     while (!Serial) {
       ; // wait for serial port to connect. Needed for native USB port only
     }
-    serialPrint(&Serial, "\nBooting weather station...");
-    serialPrint(&Serial, "\nRun Mode: ");
+    serialPrint(&Serial, F("\nBooting weather station..."));
+    serialPrint(&Serial, F("\nRun Mode: "));
     serialPrint(&Serial, (int)currentReading.runMode, HEX);
   }
 
@@ -497,15 +588,15 @@ void ICACHE_FLASH_ATTR setup() {
 
   if ((currentReading.runMode & 4) == 4) {
     if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-      serialPrint(&Serial, "\n Error initialising OLED Display.");
+      serialPrint(&Serial, F("\n Error initialising OLED Display."));
     } else {
-      serialPrint(&Serial, "\n OLED device found at address 0x3C");
+      serialPrint(&Serial, F("\n OLED device found at address 0x3C"));
       display.setTextSize(1);
       display.setTextColor(WHITE);
       display.clearDisplay();
       display.setCursor(0,0);
-      display.println("Booting...\n");
-      display.println("Run Mode: ");
+      display.println(F("Booting...\n"));
+      display.println(F("Run Mode: "));
       displayPrint(currentReading.runMode, false, true);
       display.display();
     }
@@ -520,6 +611,10 @@ void ICACHE_FLASH_ATTR setup() {
     
     wifiConnected = connectToWifi();
 
+    if ((currentReading.runMode & 1) == 1) {
+      delay(2000);
+    }
+
     if (!wifiConnected && (currentReading.runMode & 1) == 0) {
       ESP.DEEP_SLEEP_MODE(DEEP_SLEEP_TIMER);
     }
@@ -527,33 +622,34 @@ void ICACHE_FLASH_ATTR setup() {
 
   int rslt;
   while ((rslt = bme.begin()) != true) {
-    serialPrint(&Serial, "\n Error initialising BME280 device. ");
-    serialPrint(&Serial, "I2C Slave Address: ");
+    serialPrint(&Serial, F("\n Error initialising BME280 device. "));
+    serialPrint(&Serial, F("I2C Slave Address: "));
     serialPrint(&Serial, (int)settings.bme280Addr, HEX);
     delay(5000);
   }
 
   if (bme.chipModel() == BME280::ChipModel_BME280) {
-    serialPrint(&Serial, "\n BME280 device found with chip model: ");
+    serialPrint(&Serial, F("\n BME280 device found with chip model: "));
     serialPrint(&Serial, (int)bme.chipModel(), HEX);
   } else {
-    serialPrint(&Serial, "\n Invalid chip model found: ");
+    serialPrint(&Serial, F("\n Invalid chip model found: "));
     serialPrint(&Serial, (String)bme.chipModel());
-    serialPrint(&Serial, "  Will attempt to use, but garbage may ensue. ");
+    serialPrint(&Serial, F("  Will attempt to use, but garbage may ensue. "));
   }
 
   settings.tempOSR = BME280::OSR_X4;
   bme.setSettings(settings);
+  
+  updateCurrentReading();
 
-  // Do wifi connect stuff
+  if ((currentReading.runMode & 8) == 0) {
+    txSensorData();
+  }
 
   if ((currentReading.runMode & 1) == 0) {
     ESP.DEEP_SLEEP_MODE(DEEP_SLEEP_TIMER);
   }
 
-  updateCurrentReading();
-
-  // Do wifi POST stuff
 }
 
 void ICACHE_FLASH_ATTR loop() {
@@ -574,7 +670,7 @@ void ICACHE_FLASH_ATTR loop() {
       scrollCounter++;
       scrollFrame = 0;
 
-      if (scrollCounter > 12) {
+      if (scrollCounter > 15) {
         scrollCounter = 0;
       }
     }
@@ -582,5 +678,9 @@ void ICACHE_FLASH_ATTR loop() {
     updateCurrentReading();
     displaySensorOled((unsigned int)(15 << scrollCounter));
     printSensorDataVerbose(&Serial);
+    
+    if ((currentReading.runMode & 8) == 0) {
+      txSensorData();
+    }
   }
 }
