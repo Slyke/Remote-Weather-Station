@@ -2,13 +2,14 @@
 #include <Wire.h>
 #include <Adafruit_SSD1306.h>
 #include <BME280I2C.h>
+#include <Adafruit_ADS1015.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>
 
 #define STATION_ID 1
 
-// Wifi:
+// TX (Wifi):
 #define STASSID "BELL457" // SSID
 #define STAPSK  "6DF2572754DF" // SSID PSK
 #define POST_URL "http://192.168.2.23:3000/update"
@@ -43,6 +44,8 @@
 #define SCREEN_HEIGHT 32
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
+Adafruit_ADS1115 adc1115;
+
 int scrollCounter = 0;
 int scrollFrame = 0;
 int lastTxResponse = 0;
@@ -69,6 +72,8 @@ struct SensorReading_s {
   int lightLevel;
   int vIn;
   int vBat;
+  int vAux;
+  int vAux2;
   int windDirection;
   int windSpeed;
   int cps;
@@ -83,6 +88,8 @@ struct SensorReading_s {
   NAN,
   NAN,
   NAN,
+  0,
+  0,
   0,
   0,
   0,
@@ -105,102 +112,126 @@ void ICACHE_FLASH_ATTR displaySensorOled(unsigned int dataToShow) {
   if ((currentReading.runMode & 4) == 4) {
     display.clearDisplay();
     display.setCursor(0,0);
-  
-    if ((dataToShow & 1) == 1) {
+
+    unsigned int stepper = 1;
+
+    if ((dataToShow & stepper) != 0) {
       display.print(F("Temp: "));
       display.print(currentReading.temp);
       display.println("C");
     }
   
-    if ((dataToShow & 2) == 2) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("Hum: "));
       display.print(currentReading.hum);
       display.println(F("% RH"));
+      Serial.print("\n112");
     }
+    stepper *= 2;
   
-    if ((dataToShow & 4) == 4) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("Pres: "));
       display.print(currentReading.pres);
       display.println(F("Pa"));
     }
   
-    if ((dataToShow & 8) == 8) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("Light: "));
       display.println(currentReading.lightLevel);
     }
+    stepper *= 2;
   
-    if ((dataToShow & 16) == 16) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("vIn: "));
       display.print(currentReading.vIn);
       display.println(F("v"));
     }
   
-    if ((dataToShow & 32) == 32) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("vBat: "));
-      display.print(currentReading.vIn);
+      display.print(currentReading.vBat);
+      display.println(F("v"));
+    }
+    stepper *= 2;
+  
+    if ((dataToShow & stepper) != 0) {
+      display.print(F("vAux: "));
+      display.print(currentReading.vAux);
       display.println(F("v"));
     }
     
-    if ((dataToShow & 64) == 64) {
+    if ((dataToShow & stepper) != 0) {
+      display.print(F("vAux2: "));
+      display.print(currentReading.vAux2);
+      display.println(F("v"));
+    }
+    stepper *= 2;
+    
+    if ((dataToShow & stepper) != 0) {
       display.print(F("wDir: "));
       display.println(currentReading.windDirection);
     }
   
-    if ((dataToShow & 128) == 128) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("wSpd: "));
       display.print(currentReading.windSpeed);
       display.println(F("km/h"));
     }
+    stepper *= 2;
     
-    if ((dataToShow & 256) == 256) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("cps: "));
       display.print(currentReading.cps);
       display.println(F("c/s"));
     }
     
-    if ((dataToShow & 512) == 512) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("Lat: "));
       display.println(currentReading.lat);
     }
+    stepper *= 2;
     
-    if ((dataToShow & 1024) == 1024) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("Lng: "));
       display.println(currentReading.lng);
     }
   
-    if ((dataToShow & 2048) == 2048) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("Alt: "));
       display.println(currentReading.alt);
     }
+    stepper *= 2;
   
-    if ((dataToShow & 4096) == 4096) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("RunM: "));
       char hexOut[5];
       sprintf(hexOut, "%x", currentReading.runMode);
       display.println(hexOut);
     }
   
-    if ((dataToShow & 8192) == 8192) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("RXTXConn: "));
       display.println(currentReading.rxtxConn ? F("true") : F("false"));
     }
+    stepper *= 2;
   
-    if ((dataToShow & 16384) == 16384) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("RSSI: "));
       display.println(currentReading.rssi);
     }
   
-    if ((dataToShow & 32768) == 32768) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("txCode: "));
       display.println(lastTxResponse);
     }
+    stepper *= 2;
   
-    if ((dataToShow & 65536) == 65536) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("StnId: "));
       display.println(currentReading.stationId);
     }
   
-    if ((dataToShow & 131072) == 131072) {
+    if ((dataToShow & stepper) != 0) {
       display.print(F("\nTemp: "));
       display.print(currentReading.temp);
       display.println(F("C"));
@@ -229,6 +260,12 @@ void ICACHE_FLASH_ATTR printSensorDataVerbose(Stream* client) {
     client->print(F("v"));
     client->print(F("\tvBat: "));
     client->print(currentReading.vBat);
+    client->print(F("v"));
+    client->print(F("\tvAux: "));
+    client->print(currentReading.vAux);
+    client->print(F("v"));
+    client->print(F("\tvAux2: "));
+    client->print(currentReading.vAux2);
     client->print(F("v"));
     client->print(F("\twDir: "));
     client->print(currentReading.windDirection);
@@ -276,6 +313,10 @@ void ICACHE_FLASH_ATTR printSensorData(Stream* client) {
     client->print(currentReading.vIn);
     client->print(",");
     client->print(currentReading.vBat);
+    client->print(",");
+    client->print(currentReading.vAux);
+    client->print(",");
+    client->print(currentReading.vAux2);
     client->print(",");
     client->print(currentReading.windDirection);
     client->print(",");
@@ -413,14 +454,16 @@ void ICACHE_FLASH_ATTR getGeigerMullerData() {
   currentReading.cps = currentReading.cps;
 }
 
-void ICACHE_FLASH_ATTR getVoltageData() {
-  currentReading.windDirection = currentReading.windDirection;
-  currentReading.windSpeed = currentReading.windSpeed;
+void ICACHE_FLASH_ATTR getAnalogData() {
+  currentReading.vIn = adc1115.readADC_SingleEnded(0);
+  currentReading.vBat = adc1115.readADC_SingleEnded(1);
+  currentReading.vAux = adc1115.readADC_SingleEnded(2);
+  currentReading.vAux2 = adc1115.readADC_SingleEnded(3);
 }
 
 void ICACHE_FLASH_ATTR getWindData() {
-  currentReading.vIn = currentReading.vIn;
-  currentReading.vBat = currentReading.vBat;
+  currentReading.windDirection = currentReading.windDirection;
+  currentReading.windSpeed = currentReading.windSpeed;
 }
 
 void ICACHE_FLASH_ATTR getRxTxData() {
@@ -433,7 +476,7 @@ void ICACHE_FLASH_ATTR updateCurrentReading() {
   getBME280Data();
   getGpsData();
   getGeigerMullerData();
-  getVoltageData();
+  getAnalogData();
   getWindData();
   getRxTxData();
 }
@@ -477,8 +520,6 @@ void ICACHE_FLASH_ATTR setRunMode() {
   if ((currentReading.runMode & 2) == 0 && (currentReading.runMode & 4) == 0) {
     currentReading.runMode &= ~(1 << 0);
   }
-  
-    Serial.println(currentReading.runMode, HEX);
 }
 
 void ICACHE_FLASH_ATTR txSensorData() {
@@ -501,6 +542,8 @@ void ICACHE_FLASH_ATTR txSensorData() {
         JSONencoder["payload"][F("light")] = currentReading.lightLevel;
         JSONencoder["payload"][F("voltageIn")] = currentReading.vIn;
         JSONencoder["payload"][F("voltageBattery")] = currentReading.vBat;
+        JSONencoder["payload"][F("voltageAuxiliary")] = currentReading.vAux;
+        JSONencoder["payload"][F("voltageAuxiliary2")] = currentReading.vAux2;
         JSONencoder["payload"][F("windDirection")] = currentReading.windDirection;
         JSONencoder["payload"][F("windSpeed")] = currentReading.windSpeed;
         JSONencoder["payload"][F("countsPerSecond")] = currentReading.cps;
@@ -751,6 +794,8 @@ void ICACHE_FLASH_ATTR setup() {
 
   settings.tempOSR = BME280::OSR_X4;
   bme.setSettings(settings);
+
+  adc1115.begin();
   
   updateCurrentReading();
 
@@ -783,11 +828,11 @@ void ICACHE_FLASH_ATTR loop() {
         scrollCounter++;
         scrollFrame = 0;
   
-        if (scrollCounter > 15) {
+        if (scrollCounter > 8) {
           scrollCounter = 0;
         }
       }
-      displaySensorOled((unsigned int)(15 << scrollCounter));
+      displaySensorOled((unsigned int)(3 << scrollCounter));
     } else {
       scrollFrame = 0;
       scrollCounter = 0;
