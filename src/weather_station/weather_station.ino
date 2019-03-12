@@ -7,7 +7,59 @@
 #include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>
 
+// EEPROM Memory Addresses and Lengths
+#define EE_MAX_WIFI_TRIES_LOC 1
+#define EE_MAX_WIFI_TRIES_LEN 1
+
+#define EE_STATION_ID_LOC 2
+#define EE_STATION_ID_LEN 1
+
+#define EE_SERIAL_OUT_REQUEST_DETAILS_LOC 3
+#define EE_SERIAL_OUT_REQUEST_DETAILS_LEN 1
+
+#define EE_ENABLE_SERIAL_LOC 4
+#define EE_ENABLE_SERIAL_LEN 1
+
+#define EE_ENABLE_OLED_LOC 5
+#define EE_ENABLE_OLED_LEN 1
+
+#define EE_I2C_SCAN_LOC 6
+#define EE_I2C_SCAN_LEN 1
+
+#define EE_DISABLE_TRANSCE_LOC 7
+#define EE_DISABLE_TRANSCE_LEN 1
+
+#define EE_SLEEP_TIMER_LOC 8
+#define EE_SLEEP_TIMER_LEN 1
+
+#define EE_SLEEP_MODE_LOC 9
+#define EE_SLEEP_MODE_LEN 1
+
+#define EE_DISABLE_POWER_WIFI_LED_LOC 10
+#define EE_DISABLE_POWER_WIFI_LED_LEN 1
+
+#define EE_SCROLL_ENABABLED_LOC 11
+#define EE_SCROLL_ENABABLED_LEN 1
+
+#define EE_SERIAL_CON_SPD_LOC 12
+#define EE_SERIAL_CON_SPD_LEN 8
+
+#define EE_SSID_LOC 20
+#define EE_SSID_LEN 30
+
+#define EE_STAPSK_LOC 50
+#define EE_STAPSK_LEN 30
+
+#define EE_READ_GOOD_LOC 777
+#define EE_STAPSK_LEN 1
+
+// Defaults (No EEPROM)
 #define STATION_ID 1
+
+// Default GPS
+#define GPS_LAT 43.6560079
+#define GPS_LNG -79.3813297
+#define GPS_ALT 0
 
 // TX (Wifi):
 #define STASSID "BELL457" // SSID
@@ -18,17 +70,6 @@
 #define MAX_WIFI_TRIES 10 // How many times to tr to connect to WIFI
 #define SERIAL_OUT_REQUEST_DETAILS false // Turn on/off transmission debugging. Errors will always serial out.
 
-// Default GPS
-#define GPS_LAT 43.6560079
-#define GPS_LNG -79.3813297
-#define GPS_ALT 0
-
-// Pins
-#define SW_ENABLE_SERIAL D5
-#define SW_ENABLE_OLED D6
-#define SW_I2C_SCAN D7
-#define SW_DISABLE_TRANSCE D8
-
 #define DEEP_SLEEP_TIMER 5e6
 #define DEEP_SLEEP_MODE deepSleep
 
@@ -38,6 +79,15 @@
 #define DISABLE_POWER_WIFI_LED true
 
 #define SCROLL_ENABABLED true // Have the attached screen automatically scroll
+
+
+// Pins
+#define SW_ENABLE_SERIAL D5
+#define SW_ENABLE_OLED D6
+#define SW_I2C_SCAN D7
+#define SW_DISABLE_TRANSCE D4
+
+#define EEPROM_ADDR 0x50 // I2C Address
 
 #define OLED_RESET -1
 #define SCREEN_WIDTH 128
@@ -107,6 +157,37 @@ struct SensorReading_s {
 typedef struct SensorReading_s SensorReading;
 
 SensorReading currentReading;
+
+void ICACHE_FLASH_ATTR exEepromWriteByte(int deviceAddress, unsigned int memAddress, byte data) {
+  int rdata = data;
+  Wire.beginTransmission(deviceAddress);
+  Wire.write((int)(memAddress >> 8)); // MSB
+  Wire.write((int)(memAddress & 0xFF)); // LSB
+  Wire.write(rdata);
+  Wire.endTransmission();
+}
+
+void exEepromWriteBlock(int deviceAddress, unsigned int memStartAddress, byte* data, byte dataLength) {
+  Wire.beginTransmission(deviceAddress);
+  Wire.write((int)(memStartAddress >> 8)); // MSB
+  Wire.write((int)(memStartAddress & 0xFF)); // LSB
+  byte c;
+  for ( c = 0; c < dataLength; c++) {
+    Wire.write(data[c]);
+  }
+  Wire.endTransmission();
+}
+
+byte exEepromReadByte(int deviceAddress, unsigned int memAddress) {
+  byte rdata = 0xFF;
+  Wire.beginTransmission(deviceAddress);
+  Wire.write((int)(memAddress >> 8)); // MSB
+  Wire.write((int)(memAddress & 0xFF)); // LSB
+  Wire.endTransmission();
+  Wire.requestFrom(deviceAddress, 1);
+  if (Wire.available()) rdata = Wire.read();
+  return rdata;
+}
 
 void ICACHE_FLASH_ATTR displaySensorOled(unsigned int dataToShow) {
   if ((currentReading.runMode & 4) == 4) {
@@ -242,7 +323,7 @@ void ICACHE_FLASH_ATTR displaySensorOled(unsigned int dataToShow) {
 }
 
 void ICACHE_FLASH_ATTR printSensorDataVerbose(Stream* client) {
-  if ((currentReading.runMode & 2) == 2) {
+  if ((currentReading.runMode & 2) == 2 && client) {
     client->print(F("\nTemp: "));
     client->print(currentReading.temp);
     client->print(F("°C"));
@@ -300,7 +381,7 @@ void ICACHE_FLASH_ATTR printSensorDataVerbose(Stream* client) {
 }
 
 void ICACHE_FLASH_ATTR printSensorData(Stream* client) {
-  if ((currentReading.runMode & 2) == 2) {
+  if ((currentReading.runMode & 2) == 2 && client) {
     client->print(F("\n"));
     client->print(currentReading.temp);
     client->print(",");
@@ -343,19 +424,19 @@ void ICACHE_FLASH_ATTR printSensorData(Stream* client) {
 }
 
 void ICACHE_FLASH_ATTR serialPrint(Stream* client, String dataToPrint) {
-  if ((currentReading.runMode & 2) == 2) {
+  if ((currentReading.runMode & 2) == 2 && client) {
     client->print(dataToPrint);
   }
 }
 
 void ICACHE_FLASH_ATTR serialPrint(Stream* client, long dataToPrint) {
-  if ((currentReading.runMode & 2) == 2) {
+  if ((currentReading.runMode & 2) == 2 && client) {
     client->print(dataToPrint);
   }
 }
 
 void ICACHE_FLASH_ATTR serialPrint(Stream* client, int dataToPrint, int dataType) {
-  if ((currentReading.runMode & 2) == 2) {
+  if ((currentReading.runMode & 2) == 2 && client) {
     client->print(dataToPrint, dataType);
   }
 }
@@ -494,7 +575,7 @@ void ICACHE_FLASH_ATTR setRunMode() {
   }
 
   if (enableSerialComm) {
-    currentReading.runMode |= 3; 
+    currentReading.runMode |= 3;
   } else {
     currentReading.runMode &= ~(1 << 1);
   }
@@ -707,6 +788,27 @@ void ICACHE_FLASH_ATTR scanI2CDevices() {
   }
 }
 
+bool ICACHE_FLASH_ATTR setupSerial() {
+  if (Serial) {
+    return true;
+  } else {
+    Serial.begin(SERIAL_CON_SPD);
+    Serial.setDebugOutput(SERIAL_DEBUG);
+  }
+
+  if ((currentReading.runMode & 2) == 2) {
+    int i = 0;
+    while (!Serial) {
+      i++;
+      if (i >= 10) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 void ICACHE_FLASH_ATTR setup() {
 
   if (DISABLE_POWER_WIFI_LED) {
@@ -723,18 +825,22 @@ void ICACHE_FLASH_ATTR setup() {
 
   currentReading = SensorReading_UnInit;
 
+  Wire.begin();
+
   setRunMode();
 
-  if ((currentReading.runMode & 2) == 2) {
-    Serial.begin(SERIAL_CON_SPD);
-    Serial.setDebugOutput(SERIAL_DEBUG);
-    while (!Serial) {}
-    serialPrint(&Serial, F("\nBooting weather station..."));
-    serialPrint(&Serial, F("\nRun Mode: "));
-    serialPrint(&Serial, (int)currentReading.runMode, HEX);
-  }
+  exEepromWriteByte(EEPROM_ADDR, EE_READ_GOOD_LOC, 0x77);
+  delay(100);
 
-  Wire.begin();
+  if ((currentReading.runMode & 2) == 2) {
+    if (setupSerial()) {
+      serialPrint(&Serial, F("\nBooting weather station..."));
+      serialPrint(&Serial, F("\nRun Mode: "));
+      serialPrint(&Serial, (int)currentReading.runMode, HEX);
+      serialPrint(&Serial, F("\nEEPROM Read: "));
+      serialPrint(&Serial, (int)exEepromReadByte(EEPROM_ADDR, EE_READ_GOOD_LOC), HEX);
+    }
+  }
 
   if ((currentReading.runMode & 4) == 4) {
     if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
@@ -816,6 +922,14 @@ void ICACHE_FLASH_ATTR loop() {
   delay(500);
   
   setRunMode();
+
+  if ((currentReading.runMode & 2) == 2) {
+    setupSerial();
+  } else {
+    if (Serial) {
+      Serial.end();
+    }
+  }
   
   if ((currentReading.runMode & 16) == 16) {
     scrollFrame = 0;
