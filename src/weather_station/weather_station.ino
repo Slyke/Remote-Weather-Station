@@ -38,26 +38,30 @@
 #define EE_SCROLL_ENABABLED_LOC 10
 #define EE_SCROLL_ENABABLED_LEN 1
 
-#define EE_SERIAL_CON_SPD_LOC 11
+#define EE_SERIAL_DEBUG_LOC 11
+#define EE_SERIAL_DEBUG_LEN 1
+
+#define EE_SERIAL_CON_SPD_LOC 20
 #define EE_SERIAL_CON_SPD_LEN 8
 
-#define EE_STATION_ID_LOC 21
+#define EE_STATION_ID_LOC 28
 #define EE_STATION_ID_LEN 4
 
-#define EE_SSID_LOC 30
-#define EE_SSID_LEN 30
+#define EE_SSID_LOC 32
+#define EE_SSID_LEN 32
 
-#define EE_STAPSK_LOC 60
-#define EE_STAPSK_LEN 30
+#define EE_STAPSK_LOC 64
+#define EE_STAPSK_LEN 32
 
-#define EE_TELEMERTY_POST_URL_LOC 90
+#define EE_TELEMERTY_POST_URL_LOC 92
 #define EE_TELEMERTY_POST_URL_LEN 128
 
-#define EE_I2C_POST_URL_LOC 218
+#define EE_I2C_POST_URL_LOC 220
 #define EE_I2C_POST_URL_LEN 128
 
 #define EE_READ_GOOD_LOC 777
 #define EE_READ_GOOD_LEN 1
+#define EE_PROM_VERSION 0x77 // Don't set this to EEPROM_READ_FAILURE
 
 // Defaults (No EEPROM)
 #define STATION_ID 1
@@ -94,7 +98,7 @@
 #define SW_DISABLE_TRANSCE D4
 
 #define EEPROM_ADDR 0x50 // I2C Address
-#define EEPROM_READ_FAILURE 0xFF // Returned value on fail
+#define EEPROM_READ_FAILURE 0xFF // Returned value on fail. Don't set to 0, 1 or EE_PROM_VERSION
 
 #define OLED_RESET -1
 #define SCREEN_WIDTH 128
@@ -107,6 +111,7 @@ unsigned int scrollCounter = 0;
 unsigned int scrollFrame = 0;
 unsigned int lastTxResponse = 0;
 unsigned int errorList = 0;
+boolean oledOn = false;
 
 BME280I2C::Settings settings(
   BME280::OSR_X1,
@@ -422,6 +427,7 @@ void ICACHE_FLASH_ATTR setupOled(bool startMode) {
     }
     errorList |= 2;
   } else {
+    oledOn = true;
     if (startMode) {
       serialPrint(&Serial, F("\n OLED device found at address 0x3C"));
     }
@@ -444,7 +450,10 @@ void ICACHE_FLASH_ATTR setupOled() {
 
 void ICACHE_FLASH_ATTR displaySensorOled(unsigned int dataToShow) {
   if ((currentReading.runMode & 4) == 4) {
-    setupOled();
+    if (!oledOn) {
+      setupOled();
+    }
+    
     display.clearDisplay();
     display.setCursor(0,0);
 
@@ -868,21 +877,48 @@ bool ICACHE_FLASH_ATTR setupSerial() {
   return true;
 }
 
+bool ICACHE_FLASH_ATTR readEepromSettings() {
+  if (exEepromReadByte(EEPROM_ADDR, EE_READ_GOOD_LOC, EEPROM_READ_FAILURE) == EE_PROM_VERSION) {
+    runTimeVariables.wifiRetryTimes = exEepromReadByte(EEPROM_ADDR, EE_MAX_WIFI_TRIES_LOC, (byte)runTimeVariables.wifiRetryTimes);
+    runTimeVariables.enableOled = exEepromReadByte(EEPROM_ADDR, EE_ENABLE_OLED_LOC, runTimeVariables.enableOled);
+    runTimeVariables.enableSerialConn = exEepromReadByte(EEPROM_ADDR, EE_ENABLE_SERIAL_LOC, runTimeVariables.enableSerialConn);
+    runTimeVariables.enableI2CMode = exEepromReadByte(EEPROM_ADDR, EE_I2C_SCAN_LOC, runTimeVariables.enableI2CMode);
+    runTimeVariables.disableTransceiver = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, runTimeVariables.disableTransceiver);
+    runTimeVariables.serialDebugOut = exEepromReadByte(EEPROM_ADDR, EE_SERIAL_DEBUG_LOC, runTimeVariables.serialDebugOut);
+    runTimeVariables.powerWifiLed = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_POWER_WIFI_LED_LOC, runTimeVariables.powerWifiLed);
+    runTimeVariables.serialOutRequestDetails = exEepromReadByte(EEPROM_ADDR, EE_SERIAL_OUT_REQUEST_DETAILS_LOC, runTimeVariables.serialOutRequestDetails);
+    runTimeVariables.scrollEnabled = exEepromReadByte(EEPROM_ADDR, EE_SCROLL_ENABABLED_LOC, runTimeVariables.scrollEnabled);
+    
+//    runTimeVariables.serialConnSpd = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
+//    runTimeVariables.gpsLat = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
+//    runTimeVariables.gpsLng = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
+//    runTimeVariables.gpsAlt = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
+//    runTimeVariables.sleepMode = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
+//    runTimeVariables.sleepTimerus = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
+//    runTimeVariables.httpGoodResponse = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
+//    runTimeVariables.SSID = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
+//    runTimeVariables.PSK = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
+//    runTimeVariables.telemetryPostUrl = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
+//    runTimeVariables.telemetryPostUrl = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
+
+    return true;
+  }
+
+  return false;
+}
+
 void ICACHE_FLASH_ATTR setRunMode() {
   bool enableSerialComm = digitalRead(SW_ENABLE_SERIAL);
   bool enableOledOutput = digitalRead(SW_ENABLE_OLED);
   bool disableTransceiver = digitalRead(SW_DISABLE_TRANSCE);
   bool enableI2CScanner = digitalRead(SW_I2C_SCAN);
 
-  runTimeVariables.wifiRetryTimes = exEepromReadByte(EEPROM_ADDR, EE_MAX_WIFI_TRIES_LOC, (byte)runTimeVariables.wifiRetryTimes);
-  
-  runTimeVariables.enableOled = exEepromReadByte(EEPROM_ADDR, EE_ENABLE_OLED_LOC, EEPROM_READ_FAILURE);
-//  delay(50);
-  
-  if (runTimeVariables.enableOled == 0) {
-    enableOledOutput = true;
-  } else if (runTimeVariables.enableOled == 1) {
-    enableOledOutput = false;
+  if (readEepromSettings()) {
+    if (runTimeVariables.enableOled == 0) {
+      enableOledOutput = true;
+    } else if (runTimeVariables.enableOled == 1) {
+      enableOledOutput = false;
+    }
   }
 
   if (((currentReading.runMode & 4) == 4 && !enableOledOutput)) {
@@ -937,7 +973,7 @@ void ICACHE_FLASH_ATTR setup() {
   runTimeVariables = RunTimeVariables_UnInit;
 
   Wire.begin();
-  exEepromWriteByte(EEPROM_ADDR, EE_ENABLE_OLED_LOC, 0x00);
+  exEepromWriteByte(EEPROM_ADDR, EE_READ_GOOD_LOC, EE_PROM_VERSION);
 
   setRunMode();
 
@@ -946,8 +982,17 @@ void ICACHE_FLASH_ATTR setup() {
       serialPrint(&Serial, F("\nBooting weather station..."));
       serialPrint(&Serial, F("\nRun Mode: "));
       serialPrint(&Serial, (int)currentReading.runMode, HEX);
+
+      serialPrint(&Serial, F("\nEEPROM Version: "));
+      serialPrint(&Serial, EE_PROM_VERSION, HEX);
       serialPrint(&Serial, F("\nEEPROM Read: "));
-      serialPrint(&Serial, (int)exEepromReadByte(EEPROM_ADDR, EE_READ_GOOD_LOC), HEX);
+      const char eePromResult = exEepromReadByte(EEPROM_ADDR, EE_READ_GOOD_LOC);
+      if (eePromResult == EE_PROM_VERSION) {
+        serialPrint(&Serial, F(" Success:  "));
+      } else {
+        serialPrint(&Serial, F(" Failure:  "));
+      }
+      serialPrint(&Serial, (int)eePromResult, HEX);
     }
   }
 
