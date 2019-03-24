@@ -227,7 +227,7 @@ void ICACHE_FLASH_ATTR exEepromWriteByte(int deviceAddress, unsigned int memAddr
   delay(25);
 }
 
-void exEepromWriteBlock(int deviceAddress, unsigned int memStartAddress, byte* data, byte dataLength) {
+void ICACHE_FLASH_ATTR exEepromWriteBlock(int deviceAddress, unsigned int memStartAddress, byte* data, byte dataLength) {
   delay(25);
   Wire.beginTransmission(deviceAddress);
   Wire.write((int)(memStartAddress >> 8)); // MSB
@@ -240,7 +240,7 @@ void exEepromWriteBlock(int deviceAddress, unsigned int memStartAddress, byte* d
   Wire.endTransmission();
 }
 
-byte exEepromReadByte(int deviceAddress, unsigned int memAddress) {
+byte ICACHE_FLASH_ATTR exEepromReadByte(int deviceAddress, unsigned int memAddress) {
   byte rdata = EEPROM_READ_FAILURE;
   delay(25);
   Wire.beginTransmission(deviceAddress);
@@ -253,7 +253,7 @@ byte exEepromReadByte(int deviceAddress, unsigned int memAddress) {
   return rdata;
 }
 
-byte exEepromReadByte(int deviceAddress, unsigned int memAddress, byte defaultValue) {
+byte ICACHE_FLASH_ATTR exEepromReadByte(int deviceAddress, unsigned int memAddress, byte defaultValue) {
   byte rdata = defaultValue;
   delay(25);
   Wire.beginTransmission(deviceAddress);
@@ -264,6 +264,21 @@ byte exEepromReadByte(int deviceAddress, unsigned int memAddress, byte defaultVa
   if (Wire.available()) rdata = Wire.read();
   delay(25);
   return rdata;
+}
+
+String ICACHE_FLASH_ATTR readStringFromEeprom(int deviceAddress, unsigned int startAddress, byte stringMaxLength) {
+  byte stringIndex = 0;
+  String output = "";
+  while(stringIndex < stringMaxLength) {
+    char buf = exEepromReadByte(deviceAddress, startAddress + stringIndex, EEPROM_READ_FAILURE);
+    String temp(buf);
+    if (buf < 32 || buf > 126) {
+      break;
+    }
+    output.concat(buf);
+    stringIndex++;
+  }
+  return output;
 }
 
 void ICACHE_FLASH_ATTR printSensorDataVerbose(Stream* client) {
@@ -587,12 +602,16 @@ void ICACHE_FLASH_ATTR displaySensorOled(unsigned int dataToShow) {
 
 bool ICACHE_FLASH_ATTR connectToWifi() {
   WiFi.mode(WIFI_STA);
-  WiFi.begin(STASSID, STAPSK);
-
+  String wifiSSID(readStringFromEeprom(EEPROM_ADDR, EE_SSID_LOC, EE_SSID_LEN));
+  WiFi.begin(wifiSSID.c_str(), STAPSK);
   int wifiTries = 0;
 
-  displayPrint(F("Connecting RX/TX...\n"), true);
-  serialPrint(&Serial, F("\nConnecting RX/TX...\n"));
+  displayPrint(F("SSID: "), true);
+  displayPrint(wifiSSID.c_str(), false);
+  displayPrint(F("Connecting RX/TX...\n"), false);
+  serialPrint(&Serial, F("\nConnecting to: "));
+  serialPrint(&Serial, wifiSSID.c_str());
+  serialPrint(&Serial, F("\nRX/TX...\n"));
 
   while (WiFi.status() != WL_CONNECTED && wifiTries < MAX_WIFI_TRIES) {
     wifiTries++;
@@ -914,10 +933,15 @@ void ICACHE_FLASH_ATTR setRunMode() {
   bool enableI2CScanner = digitalRead(SW_I2C_SCAN);
 
   if (readEepromSettings()) {
-    if (runTimeVariables.enableOled == 0) {
+    if (runTimeVariables.enableOled == 1) {
       enableOledOutput = true;
-    } else if (runTimeVariables.enableOled == 1) {
+    } else if (runTimeVariables.enableOled == 0) {
       enableOledOutput = false;
+    }
+    if (runTimeVariables.disableTransceiver == 1) {
+      disableTransceiver = true;
+    } else if (runTimeVariables.disableTransceiver == 0) {
+      disableTransceiver = false;
     }
   }
 
@@ -973,7 +997,6 @@ void ICACHE_FLASH_ATTR setup() {
   runTimeVariables = RunTimeVariables_UnInit;
 
   Wire.begin();
-  exEepromWriteByte(EEPROM_ADDR, EE_READ_GOOD_LOC, EE_PROM_VERSION);
 
   setRunMode();
 
@@ -1002,15 +1025,15 @@ void ICACHE_FLASH_ATTR setup() {
 
   if ((currentReading.runMode & 8) == 0) {
     bool wifiConnected;
-    
+
     if ((currentReading.runMode & 1) == 1) {
-      delay(1000);
+      delay(500);
     }
     
     wifiConnected = connectToWifi();
 
     if ((currentReading.runMode & 1) == 1) {
-      delay(2000);
+      delay(1000);
     }
     if (!wifiConnected && (currentReading.runMode & 1) == 0) {
       serialPrint(&Serial, F("\n Error initialising connectivity. Entering Sleep mode."));
