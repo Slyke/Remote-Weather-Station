@@ -1,4 +1,6 @@
 
+  
+// #include <Esp.h>
 #include <Wire.h>
 #include <Adafruit_SSD1306.h>
 #include <BME280I2C.h>
@@ -26,38 +28,50 @@
 #define EE_DISABLE_TRANSCE_LOC 6
 #define EE_DISABLE_TRANSCE_LEN 1
 
-#define EE_SLEEP_TIMER_LOC 7
-#define EE_SLEEP_TIMER_LEN 1
-
-#define EE_SLEEP_MODE_LOC 8
+#define EE_SLEEP_MODE_LOC 7
 #define EE_SLEEP_MODE_LEN 1
 
-#define EE_DISABLE_POWER_WIFI_LED_LOC 9
+#define EE_DISABLE_POWER_WIFI_LED_LOC 8
 #define EE_DISABLE_POWER_WIFI_LED_LEN 1
 
-#define EE_SCROLL_ENABABLED_LOC 10
+#define EE_SCROLL_ENABABLED_LOC 9
 #define EE_SCROLL_ENABABLED_LEN 1
 
-#define EE_SERIAL_DEBUG_LOC 11
-#define EE_SERIAL_DEBUG_LEN 1
+#define EE_SERIAL_DATA_MODE_LOC 10
+#define EE_SERIAL_DATA_MODE_LEN 1
 
-#define EE_SERIAL_CON_SPD_LOC 20
+#define EE_SLEEP_TIMER_LOC 14
+#define EE_SLEEP_TIMER_LEN 4
+
+#define EE_HTTP_RX_CODE_LOC 20
+#define EE_HTTP_RX_CODE_LEN 4
+
+#define EE_SERIAL_CON_SPD_LOC 28
 #define EE_SERIAL_CON_SPD_LEN 8
 
-#define EE_STATION_ID_LOC 28
-#define EE_STATION_ID_LEN 4
+#define EE_STATION_ID_LOC 42
+#define EE_STATION_ID_LEN 16
 
-#define EE_SSID_LOC 32
-#define EE_SSID_LEN 32
+#define EE_SSID_LOC 128
+#define EE_SSID_LEN 64
 
-#define EE_STAPSK_LOC 64
-#define EE_STAPSK_LEN 32
+#define EE_STAPSK_LOC 256
+#define EE_STAPSK_LEN 64
 
-#define EE_TELEMERTY_POST_URL_LOC 92
+#define EE_TELEMERTY_POST_URL_LOC 384
 #define EE_TELEMERTY_POST_URL_LEN 128
 
-#define EE_I2C_POST_URL_LOC 220
+#define EE_I2C_POST_URL_LOC 512
 #define EE_I2C_POST_URL_LEN 128
+
+#define EE_GPS_LAT_LOC 1024
+#define EE_GPS_LAT_LEN 12
+
+#define EE_GPS_LNG_LOC 1036
+#define EE_GPS_LNG_LEN 12
+
+#define EE_GPS_ALT_LOC 1048
+#define EE_GPS_ALT_LEN 8
 
 #define EE_READ_GOOD_LOC 777
 #define EE_READ_GOOD_LEN 1
@@ -67,23 +81,25 @@
 #define STATION_ID 1
 
 // Default GPS
-#define GPS_LAT 43.6560079
-#define GPS_LNG -79.3813297
+#define GPS_LAT 0 // 43.6560079
+#define GPS_LNG 0 // -79.3813297
 #define GPS_ALT 0
 
+#define TX_SOLUTION 1 // 0 = No Radio, 1 = Integrated Wifi, 2 = NRF24L01
+
 // TX (Wifi):
-#define STASSID "BELL457" // SSID
-#define STAPSK  "6DF2572754DF" // SSID PSK
-#define POST_URL "http://192.168.2.23:3000/update"
-#define I2C_SCAN_POST_URL "http://192.168.2.23:3000/i2c"
-#define GOOD_HTTP_RESP_CODE HTTP_CODE_OK // Good HTTP response. Anything other than this number will result in an error being reported.
-#define MAX_WIFI_TRIES 10 // How many times to tr to connect to WIFI
-#define SERIAL_OUT_REQUEST_DETAILS false // Turn on/off transmission debugging. Errors will always serial out.
+#define STASSID "" // SSID
+#define STAPSK  "" // SSID PSK
+#define POST_URL ""
+#define I2C_SCAN_POST_URL ""
+#define GOOD_HTTP_RESP_CODE_DEFAULT HTTP_CODE_OK // Good HTTP response. Anything other than this number will result in an error being reported.
+#define MAX_WIFI_TRIES_DEFAULT 10 // How many times to tr to connect to WIFI
+#define SERIAL_OUT_REQUEST_DETAILS_DEFAULT true // Turn on/off transmission debugging. Errors will always serial out.
 
-#define DEEP_SLEEP_TIMER 5e6
-#define DEEP_SLEEP_MODE_1 deepSleep
+#define DEEP_SLEEP_TIMER_DEFAULT 2
+#define DEEP_SLEEP_MODE_DEFAULT 0
 
-#define SERIAL_CON_SPD 19200
+#define SERIAL_CON_SPD_DEFAULT 19200
 #define SERIAL_DEBUG 0 // have the ESP8266 debug serial outs
 
 #define DISABLE_POWER_WIFI_LED true
@@ -93,12 +109,12 @@
 
 // Pins
 #define SW_ENABLE_SERIAL D5
-#define SW_ENABLE_OLED D6
-#define SW_I2C_SCAN D7
-#define SW_DISABLE_TRANSCE D4
+#define SW_I2C_SCAN D6
+#define SW_DISABLE_TRANSCE D7
 
 #define EEPROM_ADDR 0x50 // I2C Address
 #define EEPROM_READ_FAILURE 0xFF // Returned value on fail. Don't set to 0, 1 or EE_PROM_VERSION
+#define OLED_ADDR 0x3C // OLED I2C Address
 
 #define OLED_RESET -1
 #define SCREEN_WIDTH 128
@@ -132,38 +148,38 @@ struct RunTimeVariables_s {
   char enableI2CMode;
   char disableTransceiver;
   unsigned int serialConnSpd;
-  unsigned char serialDebugOut;
+  unsigned char serialDataMode;
   unsigned char wifiRetryTimes;
   bool powerWifiLed;
   bool serialOutRequestDetails;
   bool scrollEnabled;
-  float gpsLat;
-  float gpsLng;
-  int alt;
+  double gpsLat;
+  double gpsLng;
+  float gpsAlt;
   unsigned int sleepMode;
   unsigned int sleepTimerus;
   unsigned int httpGoodResponse;
-  unsigned char SSID [EE_SSID_LEN];
-  unsigned char PSK [EE_STAPSK_LEN];
-  unsigned char telemetryPostUrl [EE_I2C_POST_URL_LEN];
-  char i2cPostUrl [EE_TELEMERTY_POST_URL_LEN];
+  String SSID;
+  String PSK;
+  String telemetryPostUrl;
+  String i2cPostUrl;
 } RunTimeVariables_UnInit {
   EEPROM_READ_FAILURE,
   EEPROM_READ_FAILURE,
   EEPROM_READ_FAILURE,
   EEPROM_READ_FAILURE,
-  SERIAL_CON_SPD,
+  SERIAL_CON_SPD_DEFAULT,
   SERIAL_DEBUG,
-  MAX_WIFI_TRIES,
+  MAX_WIFI_TRIES_DEFAULT,
   DISABLE_POWER_WIFI_LED,
-  SERIAL_OUT_REQUEST_DETAILS,
+  SERIAL_OUT_REQUEST_DETAILS_DEFAULT,
   SCROLL_ENABABLED,
   GPS_LAT,
   GPS_LNG,
   GPS_ALT,
-  5,
-  1,
-  GOOD_HTTP_RESP_CODE,
+  DEEP_SLEEP_MODE_DEFAULT,
+  DEEP_SLEEP_TIMER_DEFAULT,
+  GOOD_HTTP_RESP_CODE_DEFAULT,
   STASSID,
   STAPSK,
   POST_URL,
@@ -171,22 +187,25 @@ struct RunTimeVariables_s {
 };
 
 struct SensorReading_s {
-  unsigned char runMode;
+  unsigned char runMode; // 1 = Sleep Enabled, 2 = Serial Enabled, 4 = OLED Enabled, 8 = Disabled Tx, 16 = I2C Scan Mode
   float temp;
   float hum;
   float pres;
   unsigned int lightLevel;
+  unsigned int uv;
   unsigned int vIn;
   unsigned int vBat;
   unsigned int vAux;
-  unsigned int vAux2;
   unsigned int windDirection;
   unsigned int windSpeed;
   unsigned int cps;
+  unsigned int rAlpha;
+  unsigned int rBeta;
+  unsigned int rGamma;
   double lat;
   double lng;
-  int alt;
-  unsigned int rssi;
+  float alt;
+  int rssi;
   bool rxtxConn;
   unsigned int stationId;
 } SensorReading_UnInit {
@@ -194,6 +213,9 @@ struct SensorReading_s {
   NAN,
   NAN,
   NAN,
+  0,
+  0,
+  0,
   0,
   0,
   0,
@@ -215,6 +237,11 @@ SensorReading currentReading;
 
 typedef struct RunTimeVariables_s RunTimeVariables;
 RunTimeVariables runTimeVariables;
+
+void Reset() {
+//  asm volatile ("  jmp 0");
+  ESP.reset();
+}
 
 void ICACHE_FLASH_ATTR exEepromWriteByte(int deviceAddress, unsigned int memAddress, byte data) {
   int rdata = data;
@@ -281,6 +308,23 @@ String ICACHE_FLASH_ATTR readStringFromEeprom(int deviceAddress, unsigned int st
   return output;
 }
 
+void ICACHE_FLASH_ATTR oledMsgDisplayDelay() {
+  if (oledOn) {
+    delay(2000);
+  }
+}
+
+bool ICACHE_FLASH_ATTR findI2CDevice(int deviceAddress) {
+  Wire.beginTransmission(deviceAddress);
+  byte error = Wire.endTransmission();
+
+  if (error == 0) {
+    return true;
+  }
+
+  return false;
+}
+
 void ICACHE_FLASH_ATTR printSensorDataVerbose(Stream* client) {
   if ((currentReading.runMode & 2) == 2 && client) {
     client->print(F("\nTemp: "));
@@ -295,6 +339,9 @@ void ICACHE_FLASH_ATTR printSensorDataVerbose(Stream* client) {
     client->print(F("\tLum: "));
     client->print(currentReading.lightLevel);
     client->print(F("Lux"));
+    client->print(F("\tuv: "));
+    client->print(currentReading.uv);
+    client->print(F("i"));
     client->print(F("\tvIn: "));
     client->print(currentReading.vIn);
     client->print(F("v"));
@@ -303,9 +350,6 @@ void ICACHE_FLASH_ATTR printSensorDataVerbose(Stream* client) {
     client->print(F("v"));
     client->print(F("\tvAux: "));
     client->print(currentReading.vAux);
-    client->print(F("v"));
-    client->print(F("\tvAux2: "));
-    client->print(currentReading.vAux2);
     client->print(F("v"));
     client->print(F("\twDir: "));
     client->print(currentReading.windDirection);
@@ -316,6 +360,15 @@ void ICACHE_FLASH_ATTR printSensorDataVerbose(Stream* client) {
     client->print(F("\tcps: "));
     client->print(currentReading.cps);
     client->print(F("c/s"));
+    client->print(F("\tAlpha: "));
+    client->print(currentReading.rAlpha);
+    client->print(F("uSv/h"));
+    client->print(F("\tBeta: "));
+    client->print(currentReading.rBeta);
+    client->print(F("uSv/h"));
+    client->print(F("\trGamma: "));
+    client->print(currentReading.rGamma);
+    client->print(F("uSv/h"));
     client->print(F("\tlat: "));
     client->print(currentReading.lat);
     client->print(F("\tlng: "));
@@ -341,7 +394,7 @@ void ICACHE_FLASH_ATTR printSensorDataVerbose(Stream* client) {
 
 void ICACHE_FLASH_ATTR printSensorData(Stream* client) {
   if ((currentReading.runMode & 2) == 2 && client) {
-    client->print(F("\n"));
+    client->print(F("\nCSV: "));
     client->print(currentReading.temp);
     client->print(",");
     client->print(currentReading.hum);
@@ -350,13 +403,13 @@ void ICACHE_FLASH_ATTR printSensorData(Stream* client) {
     client->print(",");
     client->print(currentReading.lightLevel);
     client->print(",");
+    client->print(currentReading.uv);
+    client->print(",");
     client->print(currentReading.vIn);
     client->print(",");
     client->print(currentReading.vBat);
     client->print(",");
     client->print(currentReading.vAux);
-    client->print(",");
-    client->print(currentReading.vAux2);
     client->print(",");
     client->print(currentReading.windDirection);
     client->print(",");
@@ -369,6 +422,14 @@ void ICACHE_FLASH_ATTR printSensorData(Stream* client) {
     client->print(currentReading.lng);
     client->print(",");
     client->print(currentReading.alt);
+    client->print(",");
+    client->print(currentReading.cps);
+    client->print(",");
+    client->print(currentReading.rAlpha);
+    client->print(",");
+    client->print(currentReading.rBeta);
+    client->print(",");
+    client->print(currentReading.rGamma);
     client->print(",");
     client->print(currentReading.runMode, HEX);
     client->print(",");
@@ -402,22 +463,28 @@ void ICACHE_FLASH_ATTR serialPrint(Stream* client, int dataToPrint, int dataType
 
 void ICACHE_FLASH_ATTR displayPrint(String dataToPrint) {
   if ((currentReading.runMode & 4) == 4) {
-    display.print(dataToPrint);
-    display.display();
+    if (oledOn) {
+      display.print(dataToPrint);
+      display.display();
+    }
   }
 }
 
 void ICACHE_FLASH_ATTR displayPrint(long dataToPrint) {
   if ((currentReading.runMode & 4) == 4) {
-    display.print(dataToPrint);
-    display.display();
+    if (oledOn) {
+      display.print(dataToPrint);
+      display.display();
+    }
   }
 }
 void ICACHE_FLASH_ATTR displayPrint(String dataToPrint, bool clearScreen) {
   if ((currentReading.runMode & 4) == 4) {
     if (clearScreen) {
-      display.clearDisplay();
-      display.setCursor(0,0);
+      if (oledOn) {
+        display.clearDisplay();
+        display.setCursor(0,0);
+      }
     }
     displayPrint(dataToPrint);
   }
@@ -425,37 +492,46 @@ void ICACHE_FLASH_ATTR displayPrint(String dataToPrint, bool clearScreen) {
 
 void ICACHE_FLASH_ATTR displayPrint(int dataToPrint, bool clearScreen, bool formatHex) {
   if ((currentReading.runMode & 4) == 4) {
-    if (formatHex) {
-      char hexOut[5];
-      sprintf(hexOut, "%x", dataToPrint);
-      displayPrint(hexOut, clearScreen);
-    } else {
-      displayPrint((String)dataToPrint, clearScreen);
+    if (oledOn) {
+      if (formatHex) {
+        char hexOut[5];
+        sprintf(hexOut, "%x", dataToPrint);
+        displayPrint(hexOut, clearScreen);
+      } else {
+        displayPrint((String)dataToPrint, clearScreen);
+      }
     }
   }
 }
 
 void ICACHE_FLASH_ATTR setupOled(bool startMode) {
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    if (startMode) {
-      serialPrint(&Serial, F("\n Error initialising OLED Display."));
-    }
-    errorList |= 2;
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    oledOn = false;
   } else {
-    oledOn = true;
-    if (startMode) {
-      serialPrint(&Serial, F("\n OLED device found at address 0x3C"));
+    if (findI2CDevice(OLED_ADDR)) {
+      oledOn = true;
+      if (startMode) {
+        serialPrint(&Serial, F("\n OLED device found at address 0x3C"));
+      }
+      display.setTextSize(1);
+      display.setTextColor(WHITE);
+      display.clearDisplay();
+      display.setCursor(0,0);
+      if (startMode) {
+        display.println(F("Booting..."));
+        if ((currentReading.runMode & 2) == 2) {
+          display.print(F("Serial Speed: "));
+          display.println(runTimeVariables.serialConnSpd);
+          display.display();
+          delay(500);
+        }
+        display.println(F("Run Mode: "));
+        displayPrint(currentReading.runMode, false, true);
+      }
+      display.display();
+    } else {
+      oledOn = false;
     }
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    display.clearDisplay();
-    display.setCursor(0,0);
-    if (startMode) {
-      display.println(F("Booting...\n"));
-      display.println(F("Run Mode: "));
-      displayPrint(currentReading.runMode, false, true);
-    }
-    display.display();
   }
 }
 
@@ -467,6 +543,10 @@ void ICACHE_FLASH_ATTR displaySensorOled(unsigned int dataToShow) {
   if ((currentReading.runMode & 4) == 4) {
     if (!oledOn) {
       setupOled();
+    }
+
+    if (!oledOn) {
+      return;
     }
     
     display.clearDisplay();
@@ -484,7 +564,6 @@ void ICACHE_FLASH_ATTR displaySensorOled(unsigned int dataToShow) {
       display.print(F("Hum: "));
       display.print(currentReading.hum);
       display.println(F("% RH"));
-      Serial.print("\n112");
     }
     stepper *= 2;
   
@@ -493,10 +572,10 @@ void ICACHE_FLASH_ATTR displaySensorOled(unsigned int dataToShow) {
       display.print(currentReading.pres);
       display.println(F("Pa"));
     }
-  
-    if ((dataToShow & stepper) != 0) {
-      display.print(F("Light: "));
-      display.println(currentReading.lightLevel);
+      if ((dataToShow & stepper) != 0) {
+      display.print(F("vAux: "));
+      display.print(currentReading.vAux);
+      display.println(F("v"));
     }
     stepper *= 2;
   
@@ -514,15 +593,14 @@ void ICACHE_FLASH_ATTR displaySensorOled(unsigned int dataToShow) {
     stepper *= 2;
   
     if ((dataToShow & stepper) != 0) {
-      display.print(F("vAux: "));
-      display.print(currentReading.vAux);
-      display.println(F("v"));
+      display.print(F("Light: "));
+      display.println(currentReading.lightLevel);
     }
     
     if ((dataToShow & stepper) != 0) {
-      display.print(F("vAux2: "));
-      display.print(currentReading.vAux2);
-      display.println(F("v"));
+      display.print(F("uv: "));
+      display.print(currentReading.uv);
+      display.println(F("i"));
     }
     stepper *= 2;
     
@@ -602,30 +680,34 @@ void ICACHE_FLASH_ATTR displaySensorOled(unsigned int dataToShow) {
 
 bool ICACHE_FLASH_ATTR connectToWifi() {
   WiFi.mode(WIFI_STA);
-  String wifiSSID(readStringFromEeprom(EEPROM_ADDR, EE_SSID_LOC, EE_SSID_LEN));
-  WiFi.begin(wifiSSID.c_str(), STAPSK);
+  runTimeVariables.SSID = readStringFromEeprom(EEPROM_ADDR, EE_SSID_LOC, EE_SSID_LEN).c_str();
+  runTimeVariables.PSK = readStringFromEeprom(EEPROM_ADDR, EE_STAPSK_LOC, EE_STAPSK_LEN).c_str();
+  
+  WiFi.begin(runTimeVariables.SSID.c_str(), runTimeVariables.PSK.c_str());
   int wifiTries = 0;
 
   displayPrint(F("SSID: "), true);
-  displayPrint(wifiSSID.c_str(), false);
-  displayPrint(F("Connecting RX/TX...\n"), false);
+  displayPrint(runTimeVariables.SSID.c_str(), false);
+//  displayPrint(F("\nPSK: "), true);
+//  displayPrint(runTimeVariables.PSK.c_str(), false);
+  displayPrint(F("\nConnecting RX/TX..."), false);
   serialPrint(&Serial, F("\nConnecting to: "));
-  serialPrint(&Serial, wifiSSID.c_str());
-  serialPrint(&Serial, F("\nRX/TX...\n"));
+  serialPrint(&Serial, runTimeVariables.SSID.c_str());
+  serialPrint(&Serial, F("\nRX/TX..."));
 
-  while (WiFi.status() != WL_CONNECTED && wifiTries < MAX_WIFI_TRIES) {
+  while (WiFi.status() != WL_CONNECTED && wifiTries < runTimeVariables.wifiRetryTimes) {
     wifiTries++;
-    delay(1000 * wifiTries);
+    delay(750 * wifiTries);
     serialPrint(&Serial, ".");
     displayPrint(".");
   }
   
-  if (wifiTries >= MAX_WIFI_TRIES) {
+  if (wifiTries >= runTimeVariables.wifiRetryTimes) {
     serialPrint(&Serial, F("\nFailed to connect to wifi"));
     errorList |= 1;
   
     displayPrint(F("\nFailed to connect to wifi"));
-    delay(2000);
+    oledMsgDisplayDelay();
     return false;
   } else {
     serialPrint(&Serial, F("\nWifi connected: "));
@@ -637,7 +719,7 @@ bool ICACHE_FLASH_ATTR connectToWifi() {
     displayPrint((String)WiFi.localIP().toString());
     displayPrint(F("\nRSSI: "));
     displayPrint((long)WiFi.RSSI());
-
+    oledMsgDisplayDelay();
     return true;
   }
 }
@@ -649,14 +731,10 @@ void ICACHE_FLASH_ATTR getBME280Data() {
   bme.read(currentReading.pres, currentReading.temp, currentReading.hum, tempUnit, presUnit);
 }
 
-void ICACHE_FLASH_ATTR getLightLevelData() {
-  currentReading.lightLevel = analogRead(A0);
-}
-
 void ICACHE_FLASH_ATTR getGpsData() {
-  currentReading.lat = currentReading.lat;
-  currentReading.lng = currentReading.lng;
-  currentReading.alt = currentReading.alt;
+  currentReading.lat = runTimeVariables.gpsLat;
+  currentReading.lng = runTimeVariables.gpsLng;
+  currentReading.alt = runTimeVariables.gpsAlt;
 }
 
 void ICACHE_FLASH_ATTR getGeigerMullerData() {
@@ -666,8 +744,9 @@ void ICACHE_FLASH_ATTR getGeigerMullerData() {
 void ICACHE_FLASH_ATTR getAnalogData() {
   currentReading.vIn = adc1115.readADC_SingleEnded(0);
   currentReading.vBat = adc1115.readADC_SingleEnded(1);
-  currentReading.vAux = adc1115.readADC_SingleEnded(2);
-  currentReading.vAux2 = adc1115.readADC_SingleEnded(3);
+  currentReading.lightLevel = adc1115.readADC_SingleEnded(2);
+  currentReading.uv = adc1115.readADC_SingleEnded(3);
+  currentReading.vAux = analogRead(A0);
 }
 
 void ICACHE_FLASH_ATTR getWindData() {
@@ -677,11 +756,10 @@ void ICACHE_FLASH_ATTR getWindData() {
 
 void ICACHE_FLASH_ATTR getRxTxData() {
   currentReading.rxtxConn = WiFi.status() == WL_CONNECTED;
-  currentReading.rssi = WiFi.RSSI();
+  currentReading.rssi = (long)WiFi.RSSI();
 }
 
 void ICACHE_FLASH_ATTR updateCurrentReading() {
-  getLightLevelData();
   getBME280Data();
   getGpsData();
   getGeigerMullerData();
@@ -695,50 +773,67 @@ void ICACHE_FLASH_ATTR txSensorData() {
     if ((WiFi.status() == WL_CONNECTED)) {
       WiFiClient client;
       HTTPClient http;
-    
-      if (http.begin(client, POST_URL)) {
+
+      if (http.begin(client, runTimeVariables.telemetryPostUrl.c_str())) {
         http.addHeader(F("Content-Type"), F("application/json"));
         
-        StaticJsonBuffer<512> JSONbuffer;
-        char JSONmessageBuffer[512];
+        StaticJsonDocument<1024> JSONbuffer;
+        char JSONmessageBuffer[1024];
         
-        JsonObject& JSONencoder = JSONbuffer.createObject();
-        JSONencoder["payload"] = JSONbuffer.createObject();
-        JSONencoder["payload"][F("temperature")] = currentReading.temp;
-        JSONencoder["payload"][F("humidity")] = currentReading.hum;
-        JSONencoder["payload"][F("pressure")] = currentReading.pres;
-        JSONencoder["payload"][F("light")] = currentReading.lightLevel;
-        JSONencoder["payload"][F("voltageIn")] = currentReading.vIn;
-        JSONencoder["payload"][F("voltageBattery")] = currentReading.vBat;
-        JSONencoder["payload"][F("voltageAuxiliary")] = currentReading.vAux;
-        JSONencoder["payload"][F("voltageAuxiliary2")] = currentReading.vAux2;
-        JSONencoder["payload"][F("windDirection")] = currentReading.windDirection;
-        JSONencoder["payload"][F("windSpeed")] = currentReading.windSpeed;
-        JSONencoder["payload"][F("countsPerSecond")] = currentReading.cps;
-        JSONencoder["payload"][F("latitude")] = currentReading.lat;
-        JSONencoder["payload"][F("longitude")] = currentReading.lng;
-        JSONencoder["payload"][F("altitude")] = currentReading.alt;
-        JSONencoder["payload"][F("rssi")] = currentReading.rssi;
-        JSONencoder["payload"][F("transmitCode")] = lastTxResponse;
-        JSONencoder["payload"][F("stationId")] = currentReading.stationId;
-        JSONencoder["payload"][F("runMode")] = currentReading.runMode;
-        JSONencoder["payload"][F("errorList")] = errorList;
+        JsonObject JSONencoder = JSONbuffer.to<JsonObject>();
+        JSONencoder["payload"] = JSONbuffer.to<JsonObject>();
+        JSONencoder["payload"][F("rads")] = JSONbuffer.to<JsonObject>();
+        JSONencoder["payload"][F("light")] = JSONbuffer.to<JsonObject>();
+        JSONencoder["payload"][F("atmosphere")] = JSONbuffer.to<JsonObject>();
+        JSONencoder["payload"][F("power")] = JSONbuffer.to<JsonObject>();
+        JSONencoder["payload"][F("location")] = JSONbuffer.to<JsonObject>();
+        JSONencoder["payload"][F("meta")] = JSONbuffer.to<JsonObject>();
+        
+        JSONencoder["payload"][F("atmosphere")][F("temperature")] = currentReading.temp;
+        JSONencoder["payload"][F("atmosphere")][F("humidity")] = currentReading.hum;
+        JSONencoder["payload"][F("atmosphere")][F("pressure")] = currentReading.pres;
+        
+        JSONencoder["payload"][F("atmosphere")][F("windDirection")] = currentReading.windDirection;
+        JSONencoder["payload"][F("atmosphere")][F("windSpeed")] = currentReading.windSpeed;
 
-        JSONencoder.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+        JSONencoder["payload"][F("power")][F("voltageIn")] = currentReading.vIn;
+        JSONencoder["payload"][F("power")][F("voltageBattery")] = currentReading.vBat;
+        JSONencoder["payload"][F("power")][F("voltageAuxiliary")] = currentReading.vAux;
+
+        JSONencoder["payload"][F("light")][F("visible")] = currentReading.lightLevel;
+        JSONencoder["payload"][F("light")][F("uv")] = currentReading.uv;
+        
+        JSONencoder["payload"][F("rads")][F("countsPerSecond")] = currentReading.cps;
+        JSONencoder["payload"][F("rads")][F("alpha")] = currentReading.rAlpha;
+        JSONencoder["payload"][F("rads")][F("beta")] = currentReading.rBeta;
+        JSONencoder["payload"][F("rads")][F("gamma")] = currentReading.rGamma;
+        
+        JSONencoder["payload"][F("meta")][F("rssi")] = currentReading.rssi;
+        JSONencoder["payload"][F("meta")][F("transmitCode")] = lastTxResponse;
+        JSONencoder["payload"][F("meta")][F("stationId")] = currentReading.stationId;
+        JSONencoder["payload"][F("meta")][F("runMode")] = currentReading.runMode;
+        JSONencoder["payload"][F("meta")][F("errorList")] = errorList;
+
+        JSONencoder["payload"][F("location")][F("latitude")] = currentReading.lat;
+        JSONencoder["payload"][F("location")][F("longitude")] = currentReading.lng;
+        JSONencoder["payload"][F("location")][F("altitude")] = currentReading.alt;
+        
+        serializeJsonPretty(JSONencoder, JSONmessageBuffer);
         
         lastTxResponse = http.POST(JSONmessageBuffer);
-        if (SERIAL_OUT_REQUEST_DETAILS) {
-          serialPrint(&Serial, F("\nSending POST Request..."));
+        if (runTimeVariables.serialOutRequestDetails == 1) {
+          serialPrint(&Serial, F("\nSending POST Request: "));
+          serialPrint(&Serial, runTimeVariables.telemetryPostUrl.c_str());
         }
         
         if (lastTxResponse > 0) {
-          if (SERIAL_OUT_REQUEST_DETAILS) {
+          if (runTimeVariables.serialOutRequestDetails == 1) {
             serialPrint(&Serial, F(" HTTP Response: "));
             serialPrint(&Serial, (String)lastTxResponse);
           }
           
-          if (lastTxResponse == GOOD_HTTP_RESP_CODE) {
-            if (SERIAL_OUT_REQUEST_DETAILS) {
+          if (lastTxResponse == runTimeVariables.httpGoodResponse) {
+            if (runTimeVariables.serialOutRequestDetails == 1) {
               String payload = http.getString();
               serialPrint(&Serial, F("\nResponse Body: \n"));
               serialPrint(&Serial, payload);
@@ -759,18 +854,18 @@ void ICACHE_FLASH_ATTR txI2CData(int i2cAddresses[], int i2cAdressSize, int i2cA
     if ((WiFi.status() == WL_CONNECTED)) {
       WiFiClient client;
       HTTPClient http;
-    
-      if (http.begin(client, I2C_SCAN_POST_URL)) {
+
+      if (http.begin(client, runTimeVariables.i2cPostUrl.c_str())) {
         http.addHeader(F("Content-Type"), F("application/json"));
 
-        StaticJsonBuffer<512> JSONbuffer;
+        StaticJsonDocument<512> JSONbuffer;
         char JSONmessageBuffer[512];
 
-        JsonObject& JSONencoder = JSONbuffer.createObject();
-        JsonArray& foundDevicesArray = JSONbuffer.createArray();
-        JsonArray& errorDevicesArray = JSONbuffer.createArray();
+        JsonObject JSONencoder = JSONbuffer.to<JsonObject>();
+        JsonArray foundDevicesArray = JSONbuffer.to<JsonArray>();
+        JsonArray errorDevicesArray = JSONbuffer.to<JsonArray>();
         
-        JSONencoder["scanResults"] = JSONbuffer.createObject();
+        JSONencoder["scanResults"] = JSONbuffer.to<JsonObject>();
         
         for (int i = 0; i < i2cAdressSize ; i++) {
           foundDevicesArray.add(i2cAddresses[i]);
@@ -783,21 +878,22 @@ void ICACHE_FLASH_ATTR txI2CData(int i2cAddresses[], int i2cAdressSize, int i2cA
         JSONencoder["scanResults"]["foundDevices"] = foundDevicesArray;
         JSONencoder["scanResults"]["errorDevices"] = errorDevicesArray;
 
-        JSONencoder.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+        serializeJsonPretty(JSONencoder, JSONmessageBuffer);
         
         lastTxResponse = http.POST(JSONmessageBuffer);
-        if (SERIAL_OUT_REQUEST_DETAILS) {
-          serialPrint(&Serial, F("\nSending POST Request..."));
+        if (runTimeVariables.serialOutRequestDetails == 1) {
+          serialPrint(&Serial, F("\nSending POST Request: "));
+          serialPrint(&Serial, runTimeVariables.i2cPostUrl.c_str());
         }
         
         if (lastTxResponse > 0) {
-          if (SERIAL_OUT_REQUEST_DETAILS) {
+          if (runTimeVariables.serialOutRequestDetails == 1) {
             serialPrint(&Serial, F(" HTTP Response: "));
             serialPrint(&Serial, (String)lastTxResponse);
           }
           
-          if (lastTxResponse == GOOD_HTTP_RESP_CODE) {
-            if (SERIAL_OUT_REQUEST_DETAILS) {
+          if (lastTxResponse == runTimeVariables.httpGoodResponse) {
+            if (runTimeVariables.serialOutRequestDetails == 1) {
               String payload = http.getString();
               serialPrint(&Serial, F("\nResponse Body: \n"));
               serialPrint(&Serial, payload);
@@ -824,10 +920,10 @@ void ICACHE_FLASH_ATTR scanI2CDevices() {
   serialPrint(&Serial, F("\nScanning..."));
 
   if (currentReading.runMode & 16 == 16) {
-    display.clearDisplay();
-    display.setCursor(0,0);
+    displayPrint(" ", true);
   }
-  displayPrint(F("I2C Scan...\n"));
+  
+  displayPrint(F("I2C Scan...\n"), true);
   delay(500);
  
   nDevices = 0;
@@ -836,8 +932,7 @@ void ICACHE_FLASH_ATTR scanI2CDevices() {
     Wire.beginTransmission(address);
     error = Wire.endTransmission();
 
-    if (error == 0)
-    {
+    if (error == 0) {
       serialPrint(&Serial, F("\nI2C device found at address 0x"));
       displayPrint("0x");
       if (address < 16) {
@@ -868,10 +963,12 @@ void ICACHE_FLASH_ATTR scanI2CDevices() {
   if (nDevices == 0) {
     serialPrint(&Serial, F("\nNo I2C devices found"));
     displayPrint(F("No I2C devices found"));
+    delay(5000);
   } else {
     serialPrint(&Serial, F("\nDone\n"));
     displayPrint(F("Fin~"));
     txI2CData(devicesList, devicesListLength, devicesErrorList, devicesErrorListLength);
+    delay(5000);
   }
 }
 
@@ -879,8 +976,13 @@ bool ICACHE_FLASH_ATTR setupSerial() {
   if (Serial) {
     return true;
   } else {
-    Serial.begin(SERIAL_CON_SPD);
+    Serial.begin(runTimeVariables.serialConnSpd);
+    Serial.setDebugOutput(1);
+    delay(10);
     Serial.setDebugOutput(SERIAL_DEBUG);
+    if (!SERIAL_DEBUG) {
+      system_set_os_print(0);
+    }
   }
 
   if ((currentReading.runMode & 2) == 2) {
@@ -903,22 +1005,30 @@ bool ICACHE_FLASH_ATTR readEepromSettings() {
     runTimeVariables.enableSerialConn = exEepromReadByte(EEPROM_ADDR, EE_ENABLE_SERIAL_LOC, runTimeVariables.enableSerialConn);
     runTimeVariables.enableI2CMode = exEepromReadByte(EEPROM_ADDR, EE_I2C_SCAN_LOC, runTimeVariables.enableI2CMode);
     runTimeVariables.disableTransceiver = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, runTimeVariables.disableTransceiver);
-    runTimeVariables.serialDebugOut = exEepromReadByte(EEPROM_ADDR, EE_SERIAL_DEBUG_LOC, runTimeVariables.serialDebugOut);
+    runTimeVariables.serialDataMode = exEepromReadByte(EEPROM_ADDR, EE_SERIAL_DATA_MODE_LOC, runTimeVariables.serialDataMode);
     runTimeVariables.powerWifiLed = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_POWER_WIFI_LED_LOC, runTimeVariables.powerWifiLed);
     runTimeVariables.serialOutRequestDetails = exEepromReadByte(EEPROM_ADDR, EE_SERIAL_OUT_REQUEST_DETAILS_LOC, runTimeVariables.serialOutRequestDetails);
     runTimeVariables.scrollEnabled = exEepromReadByte(EEPROM_ADDR, EE_SCROLL_ENABABLED_LOC, runTimeVariables.scrollEnabled);
-    
-//    runTimeVariables.serialConnSpd = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
-//    runTimeVariables.gpsLat = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
-//    runTimeVariables.gpsLng = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
-//    runTimeVariables.gpsAlt = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
-//    runTimeVariables.sleepMode = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
-//    runTimeVariables.sleepTimerus = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
-//    runTimeVariables.httpGoodResponse = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
-//    runTimeVariables.SSID = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
-//    runTimeVariables.PSK = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
-//    runTimeVariables.telemetryPostUrl = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
-//    runTimeVariables.telemetryPostUrl = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_TRANSCE_LOC, EEPROM_READ_FAILURE);
+
+    runTimeVariables.PSK = readStringFromEeprom(EEPROM_ADDR, EE_STAPSK_LOC, EE_STAPSK_LEN).c_str();
+    runTimeVariables.telemetryPostUrl = readStringFromEeprom(EEPROM_ADDR, EE_TELEMERTY_POST_URL_LOC, EE_TELEMERTY_POST_URL_LEN).c_str();
+    runTimeVariables.i2cPostUrl = readStringFromEeprom(EEPROM_ADDR, EE_I2C_POST_URL_LOC, EE_I2C_POST_URL_LEN).c_str();
+
+    runTimeVariables.powerWifiLed = exEepromReadByte(EEPROM_ADDR, EE_DISABLE_POWER_WIFI_LED_LOC, EEPROM_READ_FAILURE);
+
+    runTimeVariables.serialConnSpd = (int)strtol(readStringFromEeprom(EEPROM_ADDR, EE_SERIAL_CON_SPD_LOC, EE_SERIAL_CON_SPD_LEN).c_str(), 0, 10);
+
+    runTimeVariables.gpsLat = (double)strtod(readStringFromEeprom(EEPROM_ADDR, EE_GPS_LAT_LOC, EE_GPS_LAT_LEN).c_str(), 0);
+    runTimeVariables.gpsLng = (double)strtod(readStringFromEeprom(EEPROM_ADDR, EE_GPS_LNG_LOC, EE_GPS_LNG_LEN).c_str(), 0);
+    runTimeVariables.gpsAlt = (float)strtof(readStringFromEeprom(EEPROM_ADDR, EE_GPS_ALT_LOC, EE_GPS_ALT_LEN).c_str(), 0);
+
+    runTimeVariables.sleepMode = exEepromReadByte(EEPROM_ADDR, EE_SLEEP_MODE_LOC, (byte)runTimeVariables.sleepMode);
+
+    runTimeVariables.sleepTimerus = (int)strtol(readStringFromEeprom(EEPROM_ADDR, EE_SLEEP_TIMER_LOC, EE_SLEEP_TIMER_LEN).c_str(), 0, 10);
+    Serial.println("\n res");
+    Serial.println(readStringFromEeprom(EEPROM_ADDR, EE_SLEEP_TIMER_LOC, EE_SLEEP_TIMER_LEN));
+
+    runTimeVariables.httpGoodResponse = (int)strtol(readStringFromEeprom(EEPROM_ADDR, EE_HTTP_RX_CODE_LOC, EE_HTTP_RX_CODE_LEN).c_str(), 0, 10);
 
     return true;
   }
@@ -928,16 +1038,18 @@ bool ICACHE_FLASH_ATTR readEepromSettings() {
 
 void ICACHE_FLASH_ATTR setRunMode() {
   bool enableSerialComm = digitalRead(SW_ENABLE_SERIAL);
-  bool enableOledOutput = digitalRead(SW_ENABLE_OLED);
   bool disableTransceiver = digitalRead(SW_DISABLE_TRANSCE);
   bool enableI2CScanner = digitalRead(SW_I2C_SCAN);
 
+  bool enableOledOutput = true;
+  
   if (readEepromSettings()) {
     if (runTimeVariables.enableOled == 1) {
       enableOledOutput = true;
     } else if (runTimeVariables.enableOled == 0) {
       enableOledOutput = false;
     }
+    
     if (runTimeVariables.disableTransceiver == 1) {
       disableTransceiver = true;
     } else if (runTimeVariables.disableTransceiver == 0) {
@@ -945,20 +1057,14 @@ void ICACHE_FLASH_ATTR setRunMode() {
     }
   }
 
-  if (((currentReading.runMode & 4) == 4 && !enableOledOutput)) {
-    display.clearDisplay();
-    display.setCursor(0,0);
-    display.display();
-  }
-
   if (enableSerialComm) {
-    currentReading.runMode |= 3;
+    currentReading.runMode |= 2;
   } else {
     currentReading.runMode &= ~(1 << 1);
   }
   
   if (enableOledOutput) {
-    currentReading.runMode |= 5;
+    currentReading.runMode |= 4;
   } else {
     currentReading.runMode &= ~(1 << 2);
   }
@@ -980,8 +1086,57 @@ void ICACHE_FLASH_ATTR setRunMode() {
   }
 }
 
+void ICACHE_FLASH_ATTR sleepExec() {
+  if ((currentReading.runMode & 1) == 0) {
+    
+    if (oledOn) {
+      delay(500);
+      displayPrint(F("Entering sleep mode.."), true);
+      delay(2000);
+      displayPrint(F(" "), true);
+    }
+    
+    if (runTimeVariables.sleepMode == 1) {
+      if (TX_SOLUTION == 1) {
+        serialPrint(&Serial, F("\n Entering deep sleep mode..."));
+//        ESP.deepSleep(runTimeVariables.sleepTimerus * 1e6); // deepSleep is in us
+Serial.println("\n timer: ");
+Serial.println(runTimeVariables.sleepTimerus);
+Serial.println(runTimeVariables.sleepTimerus * 1e6);
+        ESP.deepSleep(5e6); // deepSleep is in us
+      } else {
+        serialPrint(&Serial, F("\n Deep sleep mode (no RF)..."));
+        ESP.deepSleep(runTimeVariables.sleepTimerus * 1e6, RF_DISABLED); // deepSleep is in us
+      }
+    } else if (runTimeVariables.sleepMode == 2) {
+      serialPrint(&Serial, F("\n Entering light sleep mode..."));
+      if (TX_SOLUTION == 1) {
+        WiFi.forceSleepBegin();
+      }
+      
+      delay(runTimeVariables.sleepTimerus * 1000); // Delay is in ms
+      
+      if (TX_SOLUTION == 1) {
+        WiFi.forceSleepWake();
+      }
+      Reset();
+    } else if (runTimeVariables.sleepMode == 0) {
+      serialPrint(&Serial, F("\n NOPing no sleep mode"));
+      delay(50);
+    }
+  }
+}
+
 void ICACHE_FLASH_ATTR setup() {
-  if (DISABLE_POWER_WIFI_LED) {
+
+  Wire.begin();
+
+  currentReading = SensorReading_UnInit;
+  runTimeVariables = RunTimeVariables_UnInit;
+
+  setRunMode();
+  
+  if (runTimeVariables.powerWifiLed == 1) {
     wifi_status_led_uninstall();
     pinMode(LED_BUILTIN, INPUT);
   } else {
@@ -989,16 +1144,8 @@ void ICACHE_FLASH_ATTR setup() {
   }
   
   pinMode(SW_ENABLE_SERIAL, INPUT);
-  pinMode(SW_ENABLE_OLED, INPUT);
   pinMode(SW_DISABLE_TRANSCE, INPUT);
   pinMode(SW_I2C_SCAN, INPUT);
-
-  currentReading = SensorReading_UnInit;
-  runTimeVariables = RunTimeVariables_UnInit;
-
-  Wire.begin();
-
-  setRunMode();
 
   if ((currentReading.runMode & 2) == 2) {
     if (setupSerial()) {
@@ -1035,11 +1182,12 @@ void ICACHE_FLASH_ATTR setup() {
     if ((currentReading.runMode & 1) == 1) {
       delay(1000);
     }
+    
     if (!wifiConnected && (currentReading.runMode & 1) == 0) {
-      serialPrint(&Serial, F("\n Error initialising connectivity. Entering Sleep mode."));
-      display.println(F("Error. Entering Sleep mode."));
+      serialPrint(&Serial, F("\n Error initialising connectivity."));
+      displayPrint(F("Wifi Error."), true);
       errorList |= 4;
-      ESP.DEEP_SLEEP_MODE_1(DEEP_SLEEP_TIMER);
+      sleepExec();
     }
   }
 
@@ -1048,8 +1196,9 @@ void ICACHE_FLASH_ATTR setup() {
     serialPrint(&Serial, F("\n Error initialising BME280 device. "));
     serialPrint(&Serial, F("I2C Slave Address: "));
     serialPrint(&Serial, (int)settings.bme280Addr, HEX);
+    displayPrint(F("BME280 Error."), true);
     errorList |= 8;
-    delay(5000);
+    oledMsgDisplayDelay();
   }
 
   if (bme.chipModel() == BME280::ChipModel_BME280) {
@@ -1059,6 +1208,8 @@ void ICACHE_FLASH_ATTR setup() {
     serialPrint(&Serial, F("\n Invalid chip model found: "));
     serialPrint(&Serial, (String)bme.chipModel());
     serialPrint(&Serial, F("  Will attempt to use, but garbage may ensue. "));
+    displayPrint(F("Bad BME280 Chip Model"), true);
+    oledMsgDisplayDelay();
     errorList |= 16;
   }
 
@@ -1069,14 +1220,25 @@ void ICACHE_FLASH_ATTR setup() {
   
   updateCurrentReading();
 
-  if ((currentReading.runMode & 8) == 0) {
+  if ((currentReading.runMode & 8) == 0 && (currentReading.runMode & 16) == 0) {
+    displayPrint("TXing telemetry...", true);
     txSensorData();
-  }
-  
-  if ((currentReading.runMode & 1) == 0) {
-    ESP.DEEP_SLEEP_MODE_1(DEEP_SLEEP_TIMER);
+    if (TX_SOLUTION == 1) {
+      if (lastTxResponse == runTimeVariables.httpGoodResponse) {
+        displayPrint("\nTX Send Acknowledged.");
+      } else {
+        displayPrint("\nTX Failed: ");
+        displayPrint(lastTxResponse);
+      }
+    } else if (TX_SOLUTION == 2) {
+      displayPrint("\nTelemetry Sent");
+    }
+    oledMsgDisplayDelay();
   }
 
+  if ((currentReading.runMode & 16) == 0 && (currentReading.runMode & 8) == 0) {
+    sleepExec();
+  }
 }
 
 void ICACHE_FLASH_ATTR loop() {
@@ -1116,15 +1278,19 @@ void ICACHE_FLASH_ATTR loop() {
       scrollCounter = 0;
     }
     updateCurrentReading();
-    
-    printSensorDataVerbose(&Serial);
+
+    if (runTimeVariables.serialDataMode == 0) {
+      printSensorDataVerbose(&Serial);
+    } else {
+      printSensorData(&Serial);
+    }
     
     if ((currentReading.runMode & 8) == 0) {
       txSensorData();
     }
 
-    if ((currentReading.runMode & 1) == 0) {
-      ESP.DEEP_SLEEP_MODE_1(DEEP_SLEEP_TIMER);
+    if ((currentReading.runMode & 16) == 0 && (currentReading.runMode & 8) == 0) {
+      sleepExec();
     }
   }
 }
